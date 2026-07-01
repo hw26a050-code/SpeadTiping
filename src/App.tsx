@@ -39,6 +39,14 @@ function shuffleArray<T>(array: T[]): T[] {
   return result;
 }
 
+const ENEMIES = [
+  { name: 'ネオ・グリッチ', emoji: '👾', maxHp: 100 },
+  { name: 'サイバー・センチネル', emoji: '🤖', maxHp: 100 },
+  { name: 'ボイド・ドローン', emoji: '🛸', maxHp: 100 },
+  { name: 'バイラス・スコーピオン', emoji: '🦂', maxHp: 100 },
+  { name: '量子レッド・ドラゴン', emoji: '🐲', maxHp: 100 }
+];
+
 export default function App() {
   // 画面状態
   const [screen, setScreen] = useState<'title' | 'playing' | 'gameover'>('title');
@@ -68,7 +76,13 @@ export default function App() {
   // 視覚的エフェクト
   const [shakeTrigger, setShakeTrigger] = useState(0);
   const [isWordCorrectEffect, setIsWordCorrectEffect] = useState(false);
+  const [isWordMistakeEffect, setIsWordMistakeEffect] = useState(false);
   const [flashRed, setFlashRed] = useState(false);
+
+  // バトルアニメーション状態
+  const [playerAction, setPlayerAction] = useState<'idle' | 'attack'>('idle');
+  const [enemyAction, setEnemyAction] = useState<'idle' | 'hurt' | 'attack'>('idle');
+  const [enemyInfo, setEnemyInfo] = useState({ name: 'ネオ・グリッチ', emoji: '👾', maxHp: 100 });
 
   // 最後のゲームオーバー理由
   const [gameOverReason, setGameOverReason] = useState<'lives' | 'timeout'>('lives');
@@ -85,7 +99,7 @@ export default function App() {
     pressedKeysRef.current.clear();
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (screen !== 'playing' || !engine || isWordCorrectEffect) return;
+      if (screen !== 'playing' || !engine || isWordCorrectEffect || isWordMistakeEffect) return;
 
       // 特殊キーやMetaキー、Shiftキーなどは除外
       if (e.key.length !== 1 || e.ctrlKey || e.altKey || e.metaKey) return;
@@ -124,29 +138,42 @@ export default function App() {
         playMistakeSound(settings.soundEnabled);
         setShakeTrigger(prev => prev + 1);
         setFlashRed(true);
-        setTimeout(() => setFlashRed(false), 200);
+        setIsWordMistakeEffect(true);
+
+        // 敵の攻撃アニメーション
+        setEnemyAction('attack');
+        setTimeout(() => {
+          setEnemyAction('idle');
+        }, 450);
 
         // ライフ減少
         setLives(prev => {
           const nextLives = prev - 1;
           if (nextLives <= 0) {
             triggerGameOver('lives');
+            setFlashRed(false);
+            setIsWordMistakeEffect(false);
             return 0;
           } else {
-            // ミスをしたら即座に次のお題に進む
-            pressedKeysRef.current.clear();
-            let nextIndex = queueIndexRef.current + 1;
-            let list = wordsQueue;
-            if (nextIndex >= list.length) {
-              let sourceWords = EASY_WORDS;
-              if (difficulty === 'Normal') sourceWords = NORMAL_WORDS;
-              if (difficulty === 'Hard') sourceWords = HARD_WORDS;
-              list = shuffleArray(sourceWords);
-              setWordsQueue(list);
-              nextIndex = 0;
-            }
-            queueIndexRef.current = nextIndex;
-            setupNewWord(list[nextIndex], difficulty);
+            // ミスをした0.5秒後に次のお題に進む
+            setTimeout(() => {
+              setFlashRed(false);
+              setIsWordMistakeEffect(false);
+              pressedKeysRef.current.clear();
+              
+              let nextIndex = queueIndexRef.current + 1;
+              let list = wordsQueue;
+              if (nextIndex >= list.length) {
+                let sourceWords = EASY_WORDS;
+                if (difficulty === 'Normal') sourceWords = NORMAL_WORDS;
+                if (difficulty === 'Hard') sourceWords = HARD_WORDS;
+                list = shuffleArray(sourceWords);
+                setWordsQueue(list);
+                nextIndex = 0;
+              }
+              queueIndexRef.current = nextIndex;
+              setupNewWord(list[nextIndex], difficulty);
+            }, 500); // 0.5秒待つ
           }
           return nextLives;
         });
@@ -171,11 +198,11 @@ export default function App() {
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [screen, engine, isWordCorrectEffect, settings.soundEnabled]);
+  }, [screen, engine, isWordCorrectEffect, isWordMistakeEffect, settings.soundEnabled, wordsQueue, difficulty]);
 
   // 滑らかなプログレスバー用のタイマー
   useEffect(() => {
-    if (screen !== 'playing' || isWordCorrectEffect) return;
+    if (screen !== 'playing' || isWordCorrectEffect || isWordMistakeEffect) return;
 
     let lastTime = performance.now();
     const interval = setInterval(() => {
@@ -194,13 +221,19 @@ export default function App() {
     }, 30);
 
     return () => clearInterval(interval);
-  }, [screen, currentWord, isWordCorrectEffect]);
+  }, [screen, currentWord, isWordCorrectEffect, isWordMistakeEffect]);
+
+  const spawnNewEnemy = () => {
+    const randomEnemy = ENEMIES[Math.floor(Math.random() * ENEMIES.length)];
+    setEnemyInfo(randomEnemy);
+  };
 
   // ゲームを新規開始
   const startGame = (selectedDifficulty: Difficulty) => {
     setDifficulty(selectedDifficulty);
     setScore(0);
     setLives(3);
+    spawnNewEnemy();
     
     // 難易度に応じた単語セットをシャッフル
     let sourceWords = EASY_WORDS;
@@ -246,6 +279,21 @@ export default function App() {
     playCorrectWordSound(settings.soundEnabled);
     setScore(prev => prev + 1);
 
+    // バトルアニメーション
+    setPlayerAction('attack');
+    setEnemyAction('hurt');
+
+    // 一撃で吹き飛ばすため、200ms後に新しい敵を出現させる
+    setTimeout(() => {
+      spawnNewEnemy();
+    }, 200);
+
+    // アクションのクリア
+    setTimeout(() => {
+      setPlayerAction('idle');
+      setEnemyAction('idle');
+    }, 200);
+
     setTimeout(() => {
       setIsWordCorrectEffect(false);
       
@@ -265,7 +313,7 @@ export default function App() {
       
       queueIndexRef.current = nextIndex;
       setupNewWord(list[nextIndex], difficulty);
-    }, 400); // 優しい次の単語への遷移時間
+    }, 250); // アニメーションが完了して次のお題へ爆速移行するよう調整
   };
 
   // 時間切れ時の処理
@@ -277,26 +325,39 @@ export default function App() {
       // Easy, Normalはライフ1減少して次へ
       playMistakeSound(settings.soundEnabled);
       setFlashRed(true);
-      setTimeout(() => setFlashRed(false), 200);
+      setIsWordMistakeEffect(true);
+
+      // 敵の攻撃アニメーション
+      setEnemyAction('attack');
+      setTimeout(() => {
+        setEnemyAction('idle');
+      }, 450);
 
       setLives(prev => {
         const nextLives = prev - 1;
         if (nextLives <= 0) {
           triggerGameOver('lives');
+          setFlashRed(false);
+          setIsWordMistakeEffect(false);
           return 0;
         } else {
-          // 次の単語へ移行
-          let nextIndex = queueIndexRef.current + 1;
-          let list = wordsQueue;
-          if (nextIndex >= list.length) {
-            let sourceWords = EASY_WORDS;
-            if (difficulty === 'Normal') sourceWords = NORMAL_WORDS;
-            list = shuffleArray(sourceWords);
-            setWordsQueue(list);
-            nextIndex = 0;
-          }
-          queueIndexRef.current = nextIndex;
-          setupNewWord(list[nextIndex], difficulty);
+          // 0.5秒待ってから次の単語へ移行
+          setTimeout(() => {
+            setFlashRed(false);
+            setIsWordMistakeEffect(false);
+            
+            let nextIndex = queueIndexRef.current + 1;
+            let list = wordsQueue;
+            if (nextIndex >= list.length) {
+              let sourceWords = EASY_WORDS;
+              if (difficulty === 'Normal') sourceWords = NORMAL_WORDS;
+              list = shuffleArray(sourceWords);
+              setWordsQueue(list);
+              nextIndex = 0;
+            }
+            queueIndexRef.current = nextIndex;
+            setupNewWord(list[nextIndex], difficulty);
+          }, 500); // 0.5秒待つ
         }
         return nextLives;
       });
@@ -319,13 +380,13 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen w-full bg-linear-to-br from-amber-50 via-orange-50 to-rose-50 text-stone-800 flex flex-col justify-between p-3 sm:p-4 font-sans antialiased overflow-hidden selection:bg-amber-200">
+    <div className="h-screen w-full bg-stone-950 text-stone-100 flex flex-col justify-between p-3 sm:p-4 font-sans antialiased overflow-hidden selection:bg-cyan-500/30 selection:text-cyan-300">
       
       {/* 画面上部：共通のシンプルなヘッダー */}
-      <header id="app-header" className="w-full max-w-4xl mx-auto flex items-center justify-between py-2 border-b border-orange-100/60">
+      <header id="app-header" className="w-full max-w-4xl mx-auto flex items-center justify-between py-2 border-b border-cyan-500/20">
         <div className="flex items-center gap-2">
-          <span className="text-xl sm:text-2xl">🌸</span>
-          <h1 className="font-sans font-bold tracking-tight text-stone-700 text-sm sm:text-base">スピード耐久タイピング</h1>
+          <span className="text-xl sm:text-2xl">⚡</span>
+          <h1 className="font-sans font-bold tracking-tight text-cyan-400 text-sm sm:text-base">スピードタイピング</h1>
         </div>
         
         {/* 常時変更可能なサウンド・キーボードトグル (タイトル、プレイ中問わず優しく表示) */}
@@ -335,8 +396,8 @@ export default function App() {
             onClick={toggleSound}
             className={`p-2 rounded-xl border transition-all ${
               settings.soundEnabled 
-                ? 'bg-amber-100/80 border-amber-200 text-amber-700' 
-                : 'bg-stone-100 border-stone-200 text-stone-400'
+                ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.2)]' 
+                : 'bg-stone-900 border-stone-800 text-stone-600'
             }`}
             title={settings.soundEnabled ? 'サウンドON' : 'サウンドOFF'}
           >
@@ -347,8 +408,8 @@ export default function App() {
             onClick={toggleKeyboard}
             className={`p-2 rounded-xl border transition-all ${
               settings.showKeyboard 
-                ? 'bg-amber-100/80 border-amber-200 text-amber-700' 
-                : 'bg-stone-100 border-stone-200 text-stone-400'
+                ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.2)]' 
+                : 'bg-stone-900 border-stone-800 text-stone-600'
             }`}
             title={settings.showKeyboard ? '仮想キーボード表示中' : '仮想キーボード非表示'}
           >
@@ -374,23 +435,23 @@ export default function App() {
             >
               {/* かわいいロゴマーク */}
               <motion.div 
-                className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-tr from-amber-200 to-rose-200 rounded-full flex items-center justify-center shadow-md mb-3 sm:mb-4"
+                className="w-16 h-16 sm:w-20 sm:h-20 bg-linear-to-tr from-cyan-500 to-fuchsia-500 rounded-full flex items-center justify-center shadow-[0_0_25px_rgba(6,182,212,0.4)] mb-3 sm:mb-4"
                 animate={{ rotate: [0, 5, -5, 0] }}
                 transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
               >
-                <span className="text-3xl sm:text-4xl">🐱</span>
+                <span className="text-3xl sm:text-4xl">🎮</span>
               </motion.div>
 
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-500 via-amber-600 to-rose-500 tracking-tight mb-1">
-                スピード耐久タイピング
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-fuchsia-500 to-emerald-400 tracking-tight mb-1">
+                スピードタイピング
               </h2>
-              <p className="text-stone-500 text-xs sm:text-sm max-w-md mb-3 sm:mb-4 leading-relaxed font-medium">
+              <p className="text-stone-400 text-xs sm:text-sm max-w-md mb-3 sm:mb-4 leading-relaxed font-medium">
                 高速タイピングを練習するためのゲームです。<br />ミスなく正確に早くタイピングしましょう。
               </p>
 
               {/* クイックガイドオプションカード */}
-              <div id="option-settings-card" className="w-full max-w-md bg-white/70 backdrop-blur-xs rounded-xl p-3 border border-orange-100/80 shadow-xs mb-4 flex flex-col gap-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-600 flex items-center gap-1 justify-center">
+              <div id="option-settings-card" className="w-full max-w-md bg-stone-900/80 backdrop-blur-xs rounded-xl p-3 border border-cyan-500/20 shadow-[0_0_15px_rgba(6,182,212,0.05)] mb-4 flex flex-col gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1 justify-center">
                   <Sparkles size={14} /> ゲーム開始前のおすすめ設定
                 </span>
                 
@@ -400,8 +461,8 @@ export default function App() {
                     onClick={toggleKeyboard}
                     className={`flex-1 py-2 px-3 rounded-xl border flex flex-col items-center gap-1 transition-all ${
                       settings.showKeyboard 
-                        ? 'bg-amber-100/60 border-amber-200 text-amber-800 font-semibold' 
-                        : 'bg-white border-stone-200 text-stone-500'
+                        ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-300 font-bold shadow-[0_0_10px_rgba(6,182,212,0.1)]' 
+                        : 'bg-stone-950 border-stone-800 text-stone-500'
                     }`}
                   >
                     <Keyboard size={16} />
@@ -413,8 +474,8 @@ export default function App() {
                     onClick={toggleSound}
                     className={`flex-1 py-2 px-3 rounded-xl border flex flex-col items-center gap-1 transition-all ${
                       settings.soundEnabled 
-                        ? 'bg-amber-100/60 border-amber-200 text-amber-800 font-semibold' 
-                        : 'bg-white border-stone-200 text-stone-500'
+                        ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-300 font-bold shadow-[0_0_10px_rgba(6,182,212,0.1)]' 
+                        : 'bg-stone-950 border-stone-800 text-stone-500'
                     }`}
                   >
                     {settings.soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
@@ -425,40 +486,40 @@ export default function App() {
 
               {/* 難易度選択スタートボタン (3つの難易度) */}
               <div id="difficulty-selection-container" className="w-full max-w-lg">
-                <p className="text-xs font-bold text-stone-400 mb-2 tracking-widest uppercase">遊ぶ難易度を選んでスタート</p>
+                <p className="text-xs font-bold text-cyan-500/80 mb-2 tracking-widest uppercase">遊ぶ難易度を選んでスタート</p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   
                   {/* EASY */}
                   <button
                     id="start-easy-btn"
                     onClick={() => startGame('Easy')}
-                    className="group relative bg-linear-to-b from-emerald-400 to-emerald-500 hover:from-emerald-300 hover:to-emerald-400 text-white font-bold py-2 px-4 rounded-xl shadow-xs hover:shadow-sm hover:shadow-emerald-100 transition-all flex flex-col items-center gap-0.5"
+                    className="group relative bg-gradient-to-b from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-stone-950 font-black py-2 px-4 rounded-xl shadow-[0_0_12px_rgba(16,185,129,0.3)] hover:shadow-[0_0_18px_rgba(16,185,129,0.5)] transition-all flex flex-col items-center gap-0.5"
                   >
                     <span className="text-base">Easy</span>
-                    <span className="text-[11px] font-medium opacity-90">4文字以下の単語</span>
-                    <span className="text-[9px] bg-emerald-600/30 px-1.5 py-0.5 rounded-full mt-0.5">ミスしても次へ</span>
+                    <span className="text-[11px] font-bold opacity-90 text-stone-900">4文字以下の単語</span>
+                    <span className="text-[9px] bg-stone-950/20 px-1.5 py-0.5 rounded-full mt-0.5 text-stone-900 font-medium">ミスしても次へ</span>
                   </button>
 
                   {/* NORMAL */}
                   <button
                     id="start-normal-btn"
                     onClick={() => startGame('Normal')}
-                    className="group relative bg-linear-to-b from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-white font-bold py-2 px-4 rounded-xl shadow-xs hover:shadow-sm hover:shadow-amber-100 transition-all flex flex-col items-center gap-0.5"
+                    className="group relative bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-stone-950 font-black py-2 px-4 rounded-xl shadow-[0_0_12px_rgba(59,130,246,0.3)] hover:shadow-[0_0_18px_rgba(59,130,246,0.5)] transition-all flex flex-col items-center gap-0.5"
                   >
                     <span className="text-base">Normal</span>
-                    <span className="text-[11px] font-medium opacity-90">5〜9文字の単語</span>
-                    <span className="text-[9px] bg-amber-600/30 px-1.5 py-0.5 rounded-full mt-0.5">ミスしても次へ</span>
+                    <span className="text-[11px] font-bold opacity-90 text-stone-900">5〜9文字の単語</span>
+                    <span className="text-[9px] bg-stone-950/20 px-1.5 py-0.5 rounded-full mt-0.5 text-stone-900 font-medium">ミスしても次へ</span>
                   </button>
 
                   {/* HARD */}
                   <button
                     id="start-hard-btn"
                     onClick={() => startGame('Hard')}
-                    className="group relative bg-linear-to-b from-rose-400 to-rose-500 hover:from-rose-300 hover:to-rose-400 text-white font-bold py-2 px-4 rounded-xl shadow-xs hover:shadow-sm hover:shadow-rose-100 transition-all flex flex-col items-center gap-0.5"
+                    className="group relative bg-gradient-to-b from-rose-500 to-rose-600 hover:from-rose-400 hover:to-rose-500 text-stone-950 font-black py-2 px-4 rounded-xl shadow-[0_0_12px_rgba(244,63,94,0.3)] hover:shadow-[0_0_18px_rgba(244,63,94,0.5)] transition-all flex flex-col items-center gap-0.5"
                   >
                     <span className="text-base">Hard</span>
-                    <span className="text-[11px] font-medium opacity-90">10文字以上の単語</span>
-                    <span className="text-[9px] bg-rose-600/30 px-1.5 py-0.5 rounded-full mt-0.5 text-rose-100">時間切れで即終了</span>
+                    <span className="text-[11px] font-bold opacity-90 text-stone-900">10文字以上の単語</span>
+                    <span className="text-[9px] bg-stone-950/20 px-1.5 py-0.5 rounded-full mt-0.5 text-stone-900 font-medium">時間切れで即終了</span>
                   </button>
 
                 </div>
@@ -475,7 +536,7 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ duration: 0.25 }}
-              className="flex flex-col gap-3.5 sm:gap-4.5"
+              className="flex flex-col gap-2 sm:gap-2.5"
             >
               
               {/* フラッシュ用背景オーバーレイ (ダメージを優しく表現) */}
@@ -491,33 +552,33 @@ export default function App() {
               </AnimatePresence>
 
               {/* ステータスバー（スコア、難易度、ライフ） */}
-              <div id="playing-status-row" className="flex items-center justify-between bg-white/60 backdrop-blur-xs px-4 py-2.5 rounded-xl border border-orange-100/50 shadow-xs">
+              <div id="playing-status-row" className="flex items-center justify-between bg-stone-900/90 backdrop-blur-xs px-4 py-1.5 rounded-xl border border-cyan-500/20 shadow-[0_0_15px_rgba(6,182,212,0.05)]">
                 
                 {/* 左：現在のスコア */}
                 <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-amber-100 rounded-lg text-amber-600">
+                  <div className="p-1.5 bg-cyan-500/10 rounded-lg text-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.1)]">
                     <Trophy size={16} />
                   </div>
                   <div>
-                    <span className="text-stone-400 text-[10px] font-bold block uppercase tracking-wider">スコア</span>
-                    <span className="text-lg font-black text-stone-700">{score} <span className="text-xs font-normal text-stone-500">点</span></span>
+                    <span className="text-cyan-600 text-[10px] font-bold block uppercase tracking-wider">スコア</span>
+                    <span className="text-base font-black text-cyan-300">{score} <span className="text-xs font-normal text-cyan-500">点</span></span>
                   </div>
                 </div>
 
                 {/* 中央：難易度バッジ */}
                 <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
                   difficulty === 'Easy' 
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700' 
+                    ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400' 
                     : difficulty === 'Normal'
-                      ? 'bg-amber-50 border-amber-200 text-amber-700'
-                      : 'bg-rose-50 border-rose-200 text-rose-700'
+                      ? 'bg-blue-950/40 border-blue-500/30 text-blue-400'
+                      : 'bg-rose-950/40 border-rose-500/30 text-rose-400'
                 }`}>
                   {difficulty} モード
                 </span>
 
                 {/* 右：ライフハートマーク */}
                 <div className="flex flex-col items-end">
-                  <span className="text-stone-400 text-[10px] font-bold block uppercase tracking-wider mb-0.5">ライフ</span>
+                  <span className="text-cyan-600 text-[10px] font-bold block uppercase tracking-wider mb-0.5">ライフ</span>
                   <div className="flex gap-1">
                     {[1, 2, 3].map(heartId => (
                       <Heart 
@@ -525,14 +586,82 @@ export default function App() {
                         size={20}
                         className={`transition-colors duration-300 ${
                           heartId <= lives 
-                            ? 'fill-rose-500 text-rose-500 animate-pulse' 
-                            : 'text-stone-300'
+                            ? 'fill-rose-500 text-rose-500 animate-pulse drop-shadow-[0_0_6px_rgba(244,63,94,0.6)]' 
+                            : 'text-stone-800'
                         }`}
                       />
                     ))}
                   </div>
                 </div>
 
+              </div>
+
+              {/* バトルアリーナ（敵キャラを中央配置） */}
+              <div id="battle-arena" className="w-full bg-stone-950/80 rounded-2xl p-2.5 sm:p-3 border border-cyan-500/10 shadow-[0_0_20px_rgba(6,182,212,0.03)] flex flex-col gap-1.5 relative overflow-hidden h-[115px] sm:h-[125px] justify-center">
+                {/* グリッド/グリッチ背景演出 */}
+                <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(6,182,212,0.02)_1px,transparent_1px),linear-gradient(to_bottom,rgba(6,182,212,0.02)_1px,transparent_1px)] bg-[size:16px_16px] pointer-events-none" />
+                
+                <div className="flex flex-col items-center justify-center w-full relative z-10">
+                  {/* 敵キャラ（中央） */}
+                  <div className="flex flex-col items-center gap-1 w-full max-w-xs">
+                    <span className="text-[10px] sm:text-xs font-bold text-rose-500 tracking-wider uppercase truncate max-w-[150px]">{enemyInfo.name}</span>
+                    <motion.div
+                      id="enemy-avatar"
+                      key={enemyInfo.name}
+                      initial={{ scale: 0.2, y: -25, opacity: 0 }}
+                      animate={
+                        enemyAction === 'hurt' 
+                          ? {
+                              x: [0, 80, 200],
+                              y: [0, -60, -120],
+                              scale: [1, 1.2, 0],
+                              rotate: [0, 180, 360],
+                              opacity: [1, 0.8, 0]
+                            }
+                          : enemyAction === 'attack'
+                            ? {
+                                y: [0, 15, 0],
+                                scale: [1, 1.2, 1],
+                                rotate: [0, 5, 0]
+                              }
+                            : {
+                                y: 0,
+                                scale: 1,
+                                opacity: 1,
+                                x: 0
+                              }
+                      }
+                      transition={
+                        enemyAction === 'hurt' 
+                          ? { duration: 0.22, ease: "easeOut" }
+                          : enemyAction === 'attack'
+                            ? { duration: 0.2, ease: "easeOut" }
+                            : { duration: 0.12, ease: "easeOut" } // 待機状態への登場は極めて高速に
+                      }
+                      className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center text-2xl sm:text-3xl relative shadow-md transition-colors ${
+                        enemyAction === 'hurt' 
+                          ? 'bg-rose-500/20 border border-rose-500/60 shadow-[0_0_15px_rgba(244,63,94,0.4)]'
+                          : enemyAction === 'attack'
+                            ? 'bg-amber-500/20 border border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.3)]'
+                            : 'bg-stone-900 border border-rose-500/20 shadow-[0_0_15px_rgba(244,63,94,0.1)] animate-cy-float' // CSSふわふわアニメーションを適用
+                      }`}
+                    >
+                      {enemyInfo.emoji}
+
+                      {/* 敵攻撃時のエフェクト */}
+                      {enemyAction === 'attack' && (
+                        <motion.span
+                          initial={{ scale: 0.5, opacity: 0 }}
+                          animate={{ scale: [1, 2.0, 0], opacity: [1, 1, 0] }}
+                          transition={{ duration: 0.25 }}
+                          className="absolute text-3xl z-20"
+                        >
+                          💥
+                        </motion.span>
+                      )}
+                    </motion.div>
+                  </div>
+                </div>
               </div>
 
               {/* 単語カード */}
@@ -543,55 +672,56 @@ export default function App() {
                 } : {}}
                 transition={{ duration: 0.15 }}
                 className={`
-                  relative bg-white rounded-2xl p-4.5 sm:p-7 border border-orange-100/80 shadow-md flex flex-col items-center justify-center text-center overflow-hidden
-                  ${isWordCorrectEffect ? 'border-emerald-300 bg-emerald-50/20' : ''}
+                  relative bg-stone-900/90 rounded-2xl p-3 sm:p-5 border border-cyan-500/20 shadow-[0_0_20px_rgba(6,182,212,0.08)] flex flex-col items-center justify-center text-center overflow-hidden
+                  ${isWordCorrectEffect ? 'border-emerald-500 bg-emerald-950/30 shadow-[0_0_20px_rgba(16,185,129,0.2)]' : ''}
+                  ${isWordMistakeEffect ? 'border-rose-500 bg-rose-950/30 shadow-[0_0_20px_rgba(244,63,94,0.2)]' : ''}
                 `}
               >
                 {/* 制限時間バー */}
-                <div className="absolute top-0 left-0 right-0 h-1.5 bg-stone-100">
+                <div className="absolute top-0 left-0 right-0 h-1 bg-stone-950">
                   <motion.div
                     id="timer-progress-bar"
-                    className={`h-full ${
+                    className={`h-full transition-all duration-100 ${
                       timeLeft / totalTimeForWord < 0.3 
-                        ? 'bg-rose-500' 
-                        : 'bg-amber-400'
+                        ? 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.8)] animate-pulse' 
+                        : 'bg-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.8)]'
                     }`}
                     style={{ width: `${(timeLeft / totalTimeForWord) * 100}%` }}
                   />
                 </div>
 
-                {/* タイマー数値表示 (マイルド) */}
-                <span className="absolute top-2.5 right-4 font-mono text-xs text-stone-400 font-bold">
+                {/* タイマー数値表示 */}
+                <span className="absolute top-1.5 right-3 font-mono text-[11px] text-cyan-400 font-bold drop-shadow-[0_0_4px_rgba(6,182,212,0.4)]">
                   {Math.max(0, timeLeft).toFixed(1)}s
                 </span>
 
                 {/* 漢字表記＋上部にふりがな（小さめ） */}
-                <div className="flex flex-col items-center mb-3 sm:mb-4">
+                <div className="flex flex-col items-center mb-1.5 sm:mb-2.5">
                   {/* ふりがな（ルビ風） */}
-                  <span className="text-amber-600 font-extrabold tracking-wider text-xs sm:text-sm mb-0.5">
+                  <span className="text-fuchsia-400 font-black tracking-wider text-xs mb-0.5 drop-shadow-[0_0_6px_rgba(217,70,239,0.4)]">
                     {currentWord.kana}
                   </span>
                   {/* メインの漢字 */}
-                  <h3 className="text-2xl sm:text-3xl md:text-4xl font-black text-stone-800 tracking-wide">
+                  <h3 className="text-xl sm:text-2xl md:text-3xl font-black text-stone-100 tracking-wide">
                     {currentWord.kanji}
                   </h3>
                 </div>
 
                 {/* ローマ字タイピング列（入力済み vs 未入力 の色分け） */}
-                <div className="flex flex-wrap justify-center font-mono text-lg sm:text-xl md:text-2xl tracking-wide font-extrabold bg-stone-50/70 border border-stone-100 px-4 py-2.5 rounded-xl w-full max-w-lg mb-1">
-                  <span className="text-emerald-500 transition-colors duration-150">
+                <div className="flex flex-wrap justify-center font-mono text-base sm:text-lg md:text-xl tracking-wide font-extrabold bg-stone-950/80 border border-cyan-500/10 px-3 py-1.5 rounded-xl w-full max-w-lg mb-0.5 shadow-inner">
+                  <span className="text-emerald-400 transition-colors duration-150 drop-shadow-[0_0_6px_rgba(52,211,153,0.5)]">
                     {typedString}
                   </span>
-                  <span className="text-stone-400 relative">
+                  <span className="text-stone-500 relative">
                     {remainingString}
                     {/* カーソル演出 */}
-                    <span className="absolute -top-1 bottom-1 w-0.5 bg-amber-500 animate-pulse ml-0.5" />
+                    <span className="absolute -top-1 bottom-1 w-0.5 bg-cyan-400 animate-pulse ml-0.5 shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
                   </span>
                 </div>
 
                 {/* 日本語入力チェックアラート */}
-                <div className="flex items-center gap-1.5 text-stone-400 text-[10px] sm:text-xs mt-1.5 bg-stone-50/50 px-2.5 py-1 rounded-full border border-stone-100">
-                  <AlertCircle size={12} className="text-amber-500" />
+                <div className="flex items-center gap-1.5 text-stone-500 text-[10px] sm:text-xs mt-1.5 bg-stone-950/50 px-2.5 py-1 rounded-full border border-stone-900">
+                  <AlertCircle size={12} className="text-cyan-400" />
                   <span>必ず半角英数（英語）入力でお楽しみください</span>
                 </div>
 
@@ -604,9 +734,26 @@ export default function App() {
                       exit={{ scale: 1.1, opacity: 0 }}
                       className="absolute inset-0 bg-emerald-500/10 flex items-center justify-center pointer-events-none"
                     >
-                      <div className="bg-emerald-500 text-white px-4 py-2 rounded-full font-bold flex items-center gap-2 shadow-md">
+                      <div className="bg-emerald-500 text-stone-950 px-4 py-2 rounded-full font-black flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.4)]">
                         <CheckCircle2 size={16} />
                         <span>正解！</span>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* ミス時のスタンプエフェクト */}
+                <AnimatePresence>
+                  {isWordMistakeEffect && (
+                    <motion.div
+                      initial={{ scale: 0.5, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 1.1, opacity: 0 }}
+                      className="absolute inset-0 bg-rose-500/10 flex items-center justify-center pointer-events-none"
+                    >
+                      <div className="bg-rose-500 text-stone-950 px-4 py-2 rounded-full font-black flex items-center gap-2 shadow-[0_0_15px_rgba(244,63,94,0.4)]">
+                        <AlertCircle size={16} />
+                        <span>ミス！</span>
                       </div>
                     </motion.div>
                   )}
@@ -625,16 +772,6 @@ export default function App() {
                 </motion.div>
               )}
 
-              {/* 中断してタイトルに戻るボタン */}
-              <button
-                id="quit-to-title-btn"
-                onClick={() => setScreen('title')}
-                className="text-stone-400 hover:text-stone-600 text-xs font-semibold self-center flex items-center gap-1 mt-2 border border-stone-200/60 bg-white/40 px-3 py-1.5 rounded-lg hover:bg-white/90 transition-all"
-              >
-                <Home size={12} />
-                タイトルに戻る
-              </button>
-
             </motion.div>
           )}
 
@@ -651,15 +788,15 @@ export default function App() {
             >
               
               {/* 大きなゲームオーバーロゴ */}
-              <div className="w-14 h-14 sm:w-16 sm:h-16 bg-linear-to-b from-stone-400 to-stone-500 rounded-full flex items-center justify-center shadow-md mb-3 sm:mb-4">
-                <span className="text-2xl sm:text-3xl">🏁</span>
+              <div className="w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-b from-rose-500 to-fuchsia-600 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(244,63,94,0.4)] mb-3 sm:mb-4">
+                <span className="text-2xl sm:text-3xl">👾</span>
               </div>
 
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-stone-700 tracking-tight mb-1">
+              <h2 className="text-2xl sm:text-3xl font-black text-rose-500 tracking-tight mb-1 drop-shadow-[0_0_8px_rgba(244,63,94,0.5)]">
                 ゲームオーバー
               </h2>
               
-              <p className="text-rose-500 font-bold text-xs sm:text-sm mb-3 sm:mb-4 flex items-center gap-1">
+              <p className="text-rose-400 font-bold text-xs sm:text-sm mb-3 sm:mb-4 flex items-center gap-1 justify-center">
                 <AlertCircle size={14} />
                 {gameOverReason === 'lives' 
                   ? 'ライフがなくなってしまいました。' 
@@ -668,20 +805,20 @@ export default function App() {
               </p>
 
               {/* スコア・結果カード */}
-              <div id="results-card" className="w-full max-w-sm bg-white rounded-2xl p-4 sm:p-5 border border-orange-100 shadow-sm mb-4 sm:mb-5 flex flex-col items-center">
-                <span className="text-xs font-bold text-stone-400 tracking-wider block mb-1">今回の成績 ({difficulty})</span>
+              <div id="results-card" className="w-full max-w-sm bg-stone-900 rounded-2xl p-4 sm:p-5 border border-rose-500/30 shadow-[0_0_15px_rgba(244,63,94,0.1)] mb-4 sm:mb-5 flex flex-col items-center">
+                <span className="text-xs font-bold text-cyan-500 tracking-wider block mb-1">今回の成績 ({difficulty})</span>
                 
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-600">
+                  <div className="w-8 h-8 bg-cyan-500/10 rounded-full flex items-center justify-center text-cyan-400">
                     <Trophy size={16} />
                   </div>
-                  <span className="text-2xl sm:text-3xl font-black text-stone-700">
-                    {score} <span className="text-sm font-medium text-stone-500">点</span>
+                  <span className="text-2xl sm:text-3xl font-black text-stone-100">
+                    {score} <span className="text-sm font-medium text-stone-400">点</span>
                   </span>
                 </div>
 
                 {/* 応援の一言メッセージ */}
-                <p className="text-stone-500 text-xs leading-relaxed max-w-xs">
+                <p className="text-stone-400 text-xs leading-relaxed max-w-xs">
                   {score >= 10 
                     ? 'すごい！とっても素晴らしいタイピングでした！この調子でさらに上を目指してみましょう！' 
                     : 'お疲れ様でした！もう少しでハイスコアです。焦らずリズム良くキーを打ってみましょう。'
@@ -695,7 +832,7 @@ export default function App() {
                 <button
                   id="retry-game-btn"
                   onClick={() => startGame(difficulty)}
-                  className="flex-1 bg-gradient-to-r from-orange-400 to-amber-500 hover:from-orange-500 hover:to-amber-600 text-white font-bold py-2 sm:py-2.5 px-4 rounded-xl shadow-xs hover:shadow-sm hover:shadow-amber-100 transition-all flex items-center justify-center gap-2 text-sm"
+                  className="flex-1 bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-stone-950 font-black py-2 sm:py-2.5 px-4 rounded-xl shadow-[0_0_12px_rgba(6,182,212,0.3)] hover:shadow-[0_0_18px_rgba(6,182,212,0.5)] transition-all flex items-center justify-center gap-2 text-sm"
                 >
                   <RotateCcw size={16} />
                   もう一度遊ぶ
@@ -704,7 +841,7 @@ export default function App() {
                 <button
                   id="go-home-btn"
                   onClick={() => setScreen('title')}
-                  className="flex-1 bg-stone-100 hover:bg-stone-200 border border-stone-200/80 text-stone-700 font-bold py-2 sm:py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-sm"
+                  className="flex-1 bg-stone-900 hover:bg-stone-850 border border-stone-800 hover:border-stone-700 text-stone-200 font-bold py-2 sm:py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-sm"
                 >
                   <Home size={16} />
                   タイトルへ
@@ -719,10 +856,10 @@ export default function App() {
       </main>
 
       {/* 画面下部：おまけフッター */}
-      <footer id="app-footer" className="w-full max-w-4xl mx-auto text-center py-4 border-t border-orange-100/30 text-stone-400 text-[10px] sm:text-xs font-semibold flex flex-col sm:flex-row items-center justify-between gap-2">
-        <span>© 2026 サバイバルタイピング. All Rights Reserved.</span>
+      <footer id="app-footer" className="w-full max-w-4xl mx-auto text-center py-4 border-t border-stone-850 text-stone-500 text-[10px] sm:text-xs font-semibold flex flex-col sm:flex-row items-center justify-between gap-2">
+        <span>© 2026 スピードタイピング. All Rights Reserved.</span>
         <div className="flex items-center gap-3">
-          <span>タイピング初心者歓迎！</span>
+          <span>高速タイピング練習！</span>
           <span>•</span>
           <span>いつでもサウンド/キーボードをON/OFF可能</span>
         </div>

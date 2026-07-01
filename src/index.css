@@ -1,1 +1,10 @@
 @import "tailwindcss";
+
+@keyframes cy-float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-5px); }
+}
+
+.animate-cy-float {
+  animation: cy-float 2s ease-in-out infinite;
+}

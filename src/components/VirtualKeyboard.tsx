@@ -17,12 +17,12 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({ nextKeys, last
   const lastKeyLower = lastKeyTyped ? lastKeyTyped.toLowerCase() : null;
 
   return (
-    <div id="virtual-keyboard-container" className="w-full max-w-2xl mx-auto p-2.5 sm:p-3 bg-amber-50/50 rounded-xl border border-amber-100 shadow-xs">
-      <div className="flex flex-col gap-1 md:gap-1.5">
+    <div id="virtual-keyboard-container" className="w-full max-w-xl mx-auto p-0.5 sm:p-1 bg-stone-900/95 rounded-xl border border-cyan-500/20 shadow-[0_0_15px_rgba(6,182,212,0.05)]">
+      <div className="flex flex-col gap-0.5">
         {ROWS.map((row, rowIndex) => (
-          <div key={rowIndex} className="flex justify-center gap-0.5 sm:gap-1">
+          <div key={rowIndex} className="flex justify-center gap-0.5">
             {/* 3行目の左右にバランス調整用のスペースやインデントを置く */}
-            {rowIndex === 2 && <div className="w-3 md:w-5" />}
+            {rowIndex === 2 && <div className="w-1.5 md:w-2" />}
             
             {row.map(key => {
               const isNext = nextKeysLower.includes(key);
@@ -34,13 +34,13 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({ nextKeys, last
                   key={key}
                   className={`
                     relative flex items-center justify-center 
-                    w-7 h-9 sm:w-10 sm:h-11 md:w-11 md:h-12 
-                    rounded-md text-xs sm:text-sm md:text-base font-semibold uppercase select-none transition-colors
+                    w-5.5 h-7 sm:w-7 sm:h-8 md:w-8 md:h-8.5 
+                    rounded-md text-[8px] sm:text-[10px] md:text-xs font-semibold uppercase select-none transition-colors
                     ${isNext 
-                      ? 'bg-amber-400 text-white shadow-xs font-bold' 
+                      ? 'bg-cyan-500 text-stone-950 shadow-[0_0_12px_rgba(6,182,212,0.8)] font-black' 
                       : isLast
-                        ? 'bg-orange-200 text-orange-700 border-orange-300'
-                        : 'bg-white text-stone-600 border border-stone-200/80 shadow-xs'
+                        ? 'bg-fuchsia-600 text-white border border-fuchsia-400 shadow-[0_0_10px_rgba(217,70,239,0.6)] font-bold'
+                        : 'bg-stone-950 text-stone-400 border border-stone-800 shadow-xs'
                     }
                   `}
                   animate={isNext ? {
@@ -57,12 +57,12 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({ nextKeys, last
 
                   {/* ハイライトサークル */}
                   {isNext && (
-                    <span className="absolute inset-0 rounded-lg border-2 border-amber-300 animate-ping opacity-35 pointer-events-none" />
+                    <span className="absolute inset-0 rounded-lg border-2 border-cyan-400 animate-ping opacity-40 pointer-events-none" />
                   )}
                 </motion.div>
               );
             })}
-            {rowIndex === 2 && <div className="w-4 md:w-6" />}
+            {rowIndex === 2 && <div className="w-3 md:w-4" />}
           </div>
         ))}
       </div>
