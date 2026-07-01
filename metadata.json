@@ -1,0 +1,6 @@
+{
+  "name": "スピード耐久タイピング",
+  "description": "A beginner-friendly, pastel-themed Japanese Romaji typing game with customizable difficulty modes, lifelines, individual word timers, and a dynamic virtual keyboard guide.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
