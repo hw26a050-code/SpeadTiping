@@ -90,6 +90,9 @@ export default function App() {
   // 単語キュー用のインデックス
   const queueIndexRef = useRef(0);
 
+  // 同期的なキー入力ロック用フラグ（正解・ミスエフェクト時の連打・割り込み防止）
+  const inputLockedRef = useRef(false);
+
   // 現在押し下げ中の物理キーを管理するRef（キーが離されるまで再入力をロックする）
   const pressedKeysRef = useRef<Set<string>>(new Set());
 
@@ -99,7 +102,7 @@ export default function App() {
     pressedKeysRef.current.clear();
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (screen !== 'playing' || !engine || isWordCorrectEffect || isWordMistakeEffect) return;
+      if (screen !== 'playing' || !engine || inputLockedRef.current || isWordCorrectEffect || isWordMistakeEffect) return;
 
       // 特殊キーやMetaキー、Shiftキーなどは除外
       if (e.key.length !== 1 || e.ctrlKey || e.altKey || e.metaKey) return;
@@ -129,12 +132,14 @@ export default function App() {
 
         // 単語が完了したかチェック
         if (engine.isFinished()) {
+          inputLockedRef.current = true;
           // 単語切り替え時にも押し下げ状態をリセット
           pressedKeysRef.current.clear();
           handleWordCompleted();
         }
       } else {
         // ミス
+        inputLockedRef.current = true;
         playMistakeSound(settings.soundEnabled);
         setShakeTrigger(prev => prev + 1);
         setFlashRed(true);
@@ -271,6 +276,7 @@ export default function App() {
     setTypedString('');
     setRemainingString(newEngine.getRemainingRomaji());
     setNextAllowedKeys(newEngine.getNextAllowedKeys());
+    inputLockedRef.current = false; // 新しいお題がセットされたら入力を解放
   };
 
   // 単語を正しく入力しきったとき
@@ -318,6 +324,7 @@ export default function App() {
 
   // 時間切れ時の処理
   const handleTimeUp = () => {
+    inputLockedRef.current = true; // 即座に入力ロック
     if (difficulty === 'Hard') {
       // Hardは即ゲームオーバー
       triggerGameOver('timeout');
